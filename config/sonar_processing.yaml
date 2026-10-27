@@ -1,0 +1,21 @@
+# Sonar image processing (sonar_processing::SonarProcessingNode)
+/**/sonar_processing:
+  ros__parameters:
+    input_topic:  "sonar/echo/data"            # mono8 polar image from the ECHO driver
+    output_topic: "sonar/echo/data/processed"  # same encoding/size as the input
+
+    gaussian_filter:
+      enabled:     false    # false passes frames through unchanged
+      kernel_size: 7       # positive odd value
+      sigma_x:     0.001     # > 0
+      sigma_y:     0.001     # > 0
+
+    ca_cfar:
+      enabled:              true
+      output_topic:         "sonar/echo/data/cfar"   # mono8 mask, 255 = detection
+      guard_cells_range:    7      # >= 0
+      guard_cells_beam:     2      # >= 0
+      training_cells_range: 100      # >= 0 (range + beam must be > 0)
+      training_cells_beam:  8      # >= 0
+      false_alarm_rate:     1.0e-3 # Pfa in (0, 1); threshold = N*(Pfa^(-1/N) - 1) * noise mean
+      min_intensity:        0.0    # CUT must also exceed this (suppresses hits on empty background)
