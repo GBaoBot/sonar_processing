@@ -8,8 +8,8 @@
 
 #include <sensor_msgs/msg/image.hpp>
 
-#include "sonar_processing/ca_cfar.hpp"
 #include "sonar_processing/gaussian_filter.hpp"
+#include "sonar_processing/os_cfar.hpp"
 
 namespace sonar_processing
 {
@@ -50,9 +50,9 @@ private:
   // Gaussian Filter
   GaussianFilterConfig gaussian_filter_config_;
 
-  // CA-CFAR detector (runs on the filtered image)
-  CaCfarConfig cfar_config_;
-  CaCfar cfar_;
+  // OS-CFAR detector (runs on the filtered image)
+  OsCfarConfig cfar_config_;
+  OsCfar cfar_;
 };
 
 }  // namespace sonar_processing

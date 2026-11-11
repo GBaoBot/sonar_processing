@@ -32,6 +32,7 @@ find_package(OpenCV REQUIRED COMPONENTS core imgproc)
 # =============================================================================
 add_library(${PROJECT_NAME}_component SHARED
   src/ca_cfar.cpp
+  src/os_cfar.cpp
   src/gaussian_filter.cpp
   src/sonar_processing_node.cpp
 )

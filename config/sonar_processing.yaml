@@ -10,12 +10,16 @@
       sigma_x:     0.001     # > 0
       sigma_y:     0.001     # > 0
 
-    ca_cfar:
+    os_cfar:
       enabled:              true
       output_topic:         "sonar/echo/data/cfar"   # mono8 mask, 255 = detection
       guard_cells_range:    7      # >= 0
       guard_cells_beam:     2      # >= 0
       training_cells_range: 100      # >= 0 (range + beam must be > 0)
       training_cells_beam:  8      # >= 0
-      false_alarm_rate:     1.0e-3 # Pfa in (0, 1); threshold = N*(Pfa^(-1/N) - 1) * noise mean
+      # Rank k (1-based) of the sorted training cells used as the noise estimate, in [1, N].
+      # N = (2*(gr+tr)+1)*(2*(gb+tb)+1) - (2*gr+1)*(2*gb+1); here N = 215*21 - 15*5 = 4440.
+      # k ~ 0.75*N is the usual choice. Recompute k whenever you change the window.
+      kth_order_statistic:  3330
+      false_alarm_rate:     1.0e-3 # Pfa in (0, 1); sets the threshold factor alpha
       min_intensity:        0.0    # CUT must also exceed this (suppresses hits on empty background)

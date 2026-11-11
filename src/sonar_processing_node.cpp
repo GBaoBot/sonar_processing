@@ -22,14 +22,16 @@ SonarProcessingNode::SonarProcessingNode(const rclcpp::NodeOptions & options)
   declare_parameter<int>("gaussian_filter.kernel_size", 5);
   declare_parameter<double>("gaussian_filter.sigma_x", 1.0);
   declare_parameter<double>("gaussian_filter.sigma_y", 1.0);
-  declare_parameter<bool>("ca_cfar.enabled", true);
-  declare_parameter<std::string>("ca_cfar.output_topic", "sonar/echo/data/cfar");
-  declare_parameter<int>("ca_cfar.guard_cells_range", 2);
-  declare_parameter<int>("ca_cfar.guard_cells_beam", 2);
-  declare_parameter<int>("ca_cfar.training_cells_range", 8);
-  declare_parameter<int>("ca_cfar.training_cells_beam", 8);
-  declare_parameter<double>("ca_cfar.false_alarm_rate", 1e-3);
-  declare_parameter<double>("ca_cfar.min_intensity", 0.0);
+  declare_parameter<bool>("os_cfar.enabled", true);
+  declare_parameter<std::string>("os_cfar.output_topic", "sonar/echo/data/cfar");
+  declare_parameter<int>("os_cfar.guard_cells_range", 2);
+  declare_parameter<int>("os_cfar.guard_cells_beam", 2);
+  declare_parameter<int>("os_cfar.training_cells_range", 8);
+  declare_parameter<int>("os_cfar.training_cells_beam", 8);
+  // Default window (2, 2, 8, 8) has N = 21*21 - 5*5 = 416 training cells; k = 0.75 * N.
+  declare_parameter<int>("os_cfar.kth_order_statistic", 312);
+  declare_parameter<double>("os_cfar.false_alarm_rate", 1e-3);
+  declare_parameter<double>("os_cfar.min_intensity", 0.0);
 }
 
 SonarProcessingNode::CallbackReturn SonarProcessingNode::on_configure(
@@ -43,18 +45,21 @@ SonarProcessingNode::CallbackReturn SonarProcessingNode::on_configure(
   gaussian_filter_config_.sigma_x = get_parameter("gaussian_filter.sigma_x").as_double();
   gaussian_filter_config_.sigma_y = get_parameter("gaussian_filter.sigma_y").as_double();
 
-  cfar_enabled_ = get_parameter("ca_cfar.enabled").as_bool();
-  cfar_topic_ = get_parameter("ca_cfar.output_topic").as_string();
-  cfar_config_.guard_cells_range =
-    static_cast<int>(get_parameter("ca_cfar.guard_cells_range").as_int());
-  cfar_config_.guard_cells_beam =
-    static_cast<int>(get_parameter("ca_cfar.guard_cells_beam").as_int());
-  cfar_config_.training_cells_range =
-    static_cast<int>(get_parameter("ca_cfar.training_cells_range").as_int());
-  cfar_config_.training_cells_beam =
-    static_cast<int>(get_parameter("ca_cfar.training_cells_beam").as_int());
-  cfar_config_.false_alarm_rate = get_parameter("ca_cfar.false_alarm_rate").as_double();
-  cfar_config_.min_intensity = get_parameter("ca_cfar.min_intensity").as_double();
+  cfar_enabled_ = get_parameter("os_cfar.enabled").as_bool();
+  cfar_topic_ = get_parameter("os_cfar.output_topic").as_string();
+  // OsCfarConfig uses image axes: y = rows = range, x = columns = beam.
+  cfar_config_.guard_cells_y =
+    static_cast<int>(get_parameter("os_cfar.guard_cells_range").as_int());
+  cfar_config_.guard_cells_x =
+    static_cast<int>(get_parameter("os_cfar.guard_cells_beam").as_int());
+  cfar_config_.training_cells_y =
+    static_cast<int>(get_parameter("os_cfar.training_cells_range").as_int());
+  cfar_config_.training_cells_x =
+    static_cast<int>(get_parameter("os_cfar.training_cells_beam").as_int());
+  cfar_config_.kth_order_statistic =
+    static_cast<int>(get_parameter("os_cfar.kth_order_statistic").as_int());
+  cfar_config_.false_alarm_rate = get_parameter("os_cfar.false_alarm_rate").as_double();
+  cfar_config_.min_intensity = get_parameter("os_cfar.min_intensity").as_double();
 
   try {
     GaussianFilter::validate(gaussian_filter_config_);
@@ -78,10 +83,12 @@ SonarProcessingNode::CallbackReturn SonarProcessingNode::on_configure(
     gaussian_filter_config_.sigma_y);
   if (cfar_enabled_) {
     RCLCPP_INFO(get_logger(),
-      "CA-CFAR -> %s: guard=(%d, %d) training=(%d, %d) (range, beam) pfa=%g min_intensity=%.2f",
-      cfar_topic_.c_str(), cfar_config_.guard_cells_range, cfar_config_.guard_cells_beam,
-      cfar_config_.training_cells_range, cfar_config_.training_cells_beam,
-      cfar_config_.false_alarm_rate, cfar_config_.min_intensity);
+      "OS-CFAR -> %s: guard=(%d, %d) training=(%d, %d) (range, beam) k=%d pfa=%g "
+      "min_intensity=%.2f",
+      cfar_topic_.c_str(), cfar_config_.guard_cells_y, cfar_config_.guard_cells_x,
+      cfar_config_.training_cells_y, cfar_config_.training_cells_x,
+      cfar_config_.kth_order_statistic, cfar_config_.false_alarm_rate,
+      cfar_config_.min_intensity);
   }
   return CallbackReturn::SUCCESS;
 }
@@ -175,7 +182,7 @@ void SonarProcessingNode::imageCallback(Image::UniquePtr msg)
   // Perform CFAR filter if enabled
   if (cfar_enabled_ && cfar_mask_pub_ && type != CV_8UC1) {
     RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
-      "CA-CFAR supports mono8 only, skipping detection for '%s'", processed->encoding.c_str());
+      "OS-CFAR supports mono8 only, skipping detection for '%s'", processed->encoding.c_str());
   } else if (cfar_enabled_ && cfar_mask_pub_) {
     auto mask_msg = makeImage(processed->header, processed->height, processed->width,
         enc::MONO8, 1);
