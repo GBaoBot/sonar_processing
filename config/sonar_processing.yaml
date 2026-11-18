@@ -1,25 +1,63 @@
 # Sonar image processing (sonar_processing::SonarProcessingNode)
+# Pipeline: gaussian_filter -> os_cfar -> morphology -> persistence -> scan (first return per beam)
 /**/sonar_processing:
   ros__parameters:
-    input_topic:  "sonar/echo/data"            # mono8 polar image from the ECHO driver
-    output_topic: "sonar/echo/data/processed"  # same encoding/size as the input
+    input_topic:  "fls/echo/data"            # mono8 polar image from the ECHO driver
 
     gaussian_filter:
-      enabled:     false    # false passes frames through unchanged
+      enabled:     false    # false feeds the raw image to OS-CFAR
       kernel_size: 7       # positive odd value
-      sigma_x:     0.001     # > 0
-      sigma_y:     0.001     # > 0
+      sigma_x:     0.1     # > 0
+      sigma_y:     0.1     # > 0
 
+    # Tuned on the uuv_kraken sim (450 pings scored per beam against the sim's FLS pointcloud):
+    # near-obstacle recall 99%, 0.07 false beams/ping. Targets there are thin 1-2 cell streaks,
+    # so no smoothing, no opening and no blob minimum; persistence does the denoising.
     os_cfar:
-      enabled:              true
-      output_topic:         "sonar/echo/data/cfar"   # mono8 mask, 255 = detection
-      guard_cells_range:    7      # >= 0
+      guard_cells_range:    4      # >= 0
       guard_cells_beam:     2      # >= 0
-      training_cells_range: 100      # >= 0 (range + beam must be > 0)
+      training_cells_range: 64     # >= 0 (range + beam must be > 0)
       training_cells_beam:  8      # >= 0
       # Rank k (1-based) of the sorted training cells used as the noise estimate, in [1, N].
-      # N = (2*(gr+tr)+1)*(2*(gb+tb)+1) - (2*gr+1)*(2*gb+1); here N = 215*21 - 15*5 = 4440.
-      # k ~ 0.75*N is the usual choice. Recompute k whenever you change the window.
-      kth_order_statistic:  3330
-      false_alarm_rate:     1.0e-3 # Pfa in (0, 1); sets the threshold factor alpha
-      min_intensity:        0.0    # CUT must also exceed this (suppresses hits on empty background)
+      # N = (2*(gr+tr)+1)*(2*(gb+tb)+1) - (2*gr+1)*(2*gb+1); here N = 137*21 - 9*5 = 2832.
+      # Recompute k whenever you change the window.
+      kth_order_statistic:  2407   # 0.85*N
+      false_alarm_rate:     1.0e-2 # Pfa in (0, 1); sets the threshold factor alpha
+      # Absolute floor. Needed: in the near-range dead zone the background is all zeros, so the
+      # order statistic is 0 and any pixel >= 1 would be a detection (real hits are >= 10).
+      min_intensity:        5.0
+
+    morphology:
+      kernel_range:   1    # opening kernel (cells), positive odd; 1 = no opening on that axis
+      kernel_beam:    1    # (a 3x3 opening erases the 1-2 cell wide targets)
+      min_blob_cells: 1    # drop 8-connected blobs smaller than this; <= 1 disables
+
+    persistence:            # keep a detection only if seen in >= N of the last M pings
+      persist_n:         3  # 1 <= N <= M; N = M = 1 disables
+      persist_m:         5  # <= 255
+      persist_tol_range: 5  # tolerance dilation half-size (cells) for vehicle motion; 5 = 0.24 m at 50 m
+      persist_tol_beam:  3  # 3 beams = 1.4 deg at 120 deg / 256 beams
+
+    scan:
+      topic: "fls/echo/scan"     # sensor_msgs/LaserScan in the image's frame_id, image stamp
+      # Must match the driver's `range` parameter (it is not published with the image).
+      # 50 m = the sim sonar (checked against its pointcloud); set to the ECHO `range` on hardware.
+      sonar_range_m:        50.0
+      min_range_m:          0.5    # ignore returns closer than this; published as range_min
+      obstacle_max_range_m: 50.0   # ignore returns farther than this; published as range_max
+      # Per-beam bearings (deg, CCW positive, one per image column). Leave unset for a uniform
+      # fan of fov_deg with column 0 = port. Example: beam_bearings_deg: [65.0, 64.5, ...]
+      # beam_bearings_deg: []
+      # Uniform fan width; 0 = driver rule (120 if range <= 30 m, else 90). The sim keeps 120 deg
+      # at 50 m (checked against its pointcloud), so it is pinned here. Use 0 on hardware.
+      fov_deg:              120.0
+      scan_angle_increment_deg: 0.0  # output spacing when resampling; 0 = finest beam spacing
+      uniform_tol_deg:      0.01   # bearings this close to uniform are not resampled
+      empty_beam_value:     "inf"  # "inf" (costmap clears the beam) or "range_max"
+
+    debug:                  # mono8 polar images, one per stage
+      smoothed:    {enabled: true, topic: "fls/echo/debug/smoothed"}
+      cfar_mask:   {enabled: true, topic: "fls/echo/debug/cfar_mask"}
+      morphology:  {enabled: true, topic: "fls/echo/debug/morphology"}
+      persistence: {enabled: true, topic: "fls/echo/debug/persistence"}
+      returns:     {enabled: true, topic: "fls/echo/debug/returns"}

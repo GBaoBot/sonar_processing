@@ -3,7 +3,7 @@
 <package format="3">
   <name>sonar_processing</name>
   <version>0.0.0</version>
-  <description>Lifecycle component that denoises Sonoptix ECHO sonar images (Gaussian filter) and republishes them.</description>
+  <description>Lifecycle component that turns Sonoptix ECHO polar sonar images into a sensor_msgs/LaserScan (Gaussian filter, OS-CFAR, morphology, persistence, first return per beam).</description>
   <maintainer email="baobui226mh@gmail.com">mecatron</maintainer>
   <license>TODO: License declaration</license>
 

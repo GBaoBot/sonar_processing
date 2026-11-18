@@ -10,12 +10,6 @@ def generate_launch_description():
     default_config = PathJoinSubstitution(
         [FindPackageShare('sonar_processing'), 'config', 'sonar_processing.yaml'])
     
-    sonar_remappings = [
-        ('sonar/echo/data', 'perception/echo/data'),
-        ('sonar/echo/data/processed', 'perception/echo/data/processed'),
-        ('sonar/echo/data/cfar', 'perception/echo/data/cfar'),
-    ]
-
     container = ComposableNodeContainer(
         name="sonar_processing_container",
         namespace="",
@@ -27,7 +21,6 @@ def generate_launch_description():
                 plugin="sonar_processing::SonarProcessingNode",
                 name="sonar_processing",
                 namespace=LaunchConfiguration("namespace"),
-                remappings=sonar_remappings,
                 parameters=[LaunchConfiguration("params_file")],
                 extra_arguments=[{"use_intra_process_comms": True}],
                 autostart=False,

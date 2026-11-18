@@ -34,6 +34,9 @@ add_library(${PROJECT_NAME}_component SHARED
   src/ca_cfar.cpp
   src/os_cfar.cpp
   src/gaussian_filter.cpp
+  src/morphology_filter.cpp
+  src/persistence_filter.cpp
+  src/scan_builder.cpp
   src/sonar_processing_node.cpp
 )
 
