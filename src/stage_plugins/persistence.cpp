@@ -17,16 +17,16 @@ void Persistence::configure(
   core::PersistenceConfig c;
   c.persist_n = declare_and_get<int>(n, id + ".persist_n");
   c.persist_m = declare_and_get<int>(n, id + ".persist_m");
-  c.persist_tol_range = declare_and_get<int>(n, id + ".persist_tol_range");
-  c.persist_tol_beam = declare_and_get<int>(n, id + ".persist_tol_beam");
+  c.persist_tol_x = declare_and_get<int>(n, id + ".persist_tol_x");
+  c.persist_tol_y = declare_and_get<int>(n, id + ".persist_tol_y");
   filter_.configure(c);
   persist_m_ = c.persist_m;
   const bool debug = DebugImagePublisher::enabled(n, id);
   debug_out_.configure(n, debug, id);
   debug_hit_count_.configure(n, debug, id, "hit_count");
 
-  RCLCPP_INFO(logger, "[%s] %d of %d pings, tol=(%d, %d) (range, beam)",
-    id.c_str(), c.persist_n, c.persist_m, c.persist_tol_range, c.persist_tol_beam);
+  RCLCPP_INFO(logger, "[%s] %d of %d pings, tol=(%d, %d) (x, y)",
+    id.c_str(), c.persist_n, c.persist_m, c.persist_tol_x, c.persist_tol_y);
 }
 
 bool Persistence::process(sensor_msgs::msg::Image & image)

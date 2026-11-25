@@ -15,13 +15,13 @@ void Morphology::configure(
 {
   auto n = lock_node(node, id);
   core::MorphologyConfig c;
-  c.kernel_range = declare_and_get<int>(n, id + ".kernel_range");
-  c.kernel_beam = declare_and_get<int>(n, id + ".kernel_beam");
+  c.kernel_x = declare_and_get<int>(n, id + ".kernel_x");
+  c.kernel_y = declare_and_get<int>(n, id + ".kernel_y");
   filter_.configure(c);
   debug_out_.configure(n, DebugImagePublisher::enabled(n, id), id);
 
-  RCLCPP_INFO(logger, "[%s] open kernel=(%d, %d) (range, beam)",
-    id.c_str(), c.kernel_range, c.kernel_beam);
+  RCLCPP_INFO(logger, "[%s] open kernel=(%d, %d) (x, y)",
+    id.c_str(), c.kernel_x, c.kernel_y);
 }
 
 bool Morphology::process(sensor_msgs::msg::Image & image)

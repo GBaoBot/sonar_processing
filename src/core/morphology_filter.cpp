@@ -9,8 +9,8 @@ namespace sonar_processing::core
 
 void MorphologyFilter::validate(const MorphologyConfig & config)
 {
-  if (config.kernel_range <= 0 || config.kernel_range % 2 == 0 ||
-    config.kernel_beam <= 0 || config.kernel_beam % 2 == 0)
+  if (config.kernel_x <= 0 || config.kernel_x % 2 == 0 ||
+    config.kernel_y <= 0 || config.kernel_y % 2 == 0)
   {
     throw std::invalid_argument(
             "morphology kernel sizes must be positive odd values");
@@ -23,7 +23,7 @@ void MorphologyFilter::configure(const MorphologyConfig & config)
   config_ = config;
   // cv::Size is (width, height) = (beams, range samples).
   kernel_ = cv::getStructuringElement(
-    cv::MORPH_RECT, cv::Size(config.kernel_beam, config.kernel_range));
+    cv::MORPH_RECT, cv::Size(config.kernel_x, config.kernel_y));
 }
 
 void MorphologyFilter::apply(const cv::Mat & mask, cv::Mat & dst)
@@ -35,7 +35,7 @@ void MorphologyFilter::apply(const cv::Mat & mask, cv::Mat & dst)
     throw std::logic_error("MorphologyFilter used before configure()");
   }
 
-  if (config_.kernel_range > 0 && config_.kernel_beam > 0) {
+  if (config_.kernel_x > 0 && config_.kernel_y > 0) {
     cv::morphologyEx(mask, dst, cv::MORPH_OPEN, kernel_);
   } else {
     mask.copyTo(dst);

@@ -16,7 +16,7 @@ void PersistenceFilter::validate(const PersistenceConfig & config)
   if (config.persist_n < 1 || config.persist_n > config.persist_m) {
     throw std::invalid_argument("persist_n must be in [1, persist_m]");
   }
-  if (config.persist_tol_range < 0 || config.persist_tol_beam < 0) {
+  if (config.persist_tol_x < 0 || config.persist_tol_y < 0) {
     throw std::invalid_argument("persistence tolerances must be >= 0");
   }
 }
@@ -27,7 +27,7 @@ void PersistenceFilter::configure(const PersistenceConfig & config)
   config_ = config;
   kernel_ = cv::getStructuringElement(
     cv::MORPH_RECT,
-    cv::Size(2 * config.persist_tol_beam + 1, 2 * config.persist_tol_range + 1));
+    cv::Size(2 * config.persist_tol_x + 1, 2 * config.persist_tol_y + 1));
   history_.assign(static_cast<size_t>(config.persist_m), cv::Mat());
   reset();
 }
@@ -61,7 +61,7 @@ void PersistenceFilter::apply(const cv::Mat & mask, cv::Mat & dst)
   }
 
   // Replace oldest ping with latest ping
-  if (config_.persist_tol_range > 0 || config_.persist_tol_beam > 0) {
+  if (config_.persist_tol_x > 0 || config_.persist_tol_y > 0) {
     cv::dilate(mask, slot, kernel_);
   } else {
     mask.copyTo(slot);

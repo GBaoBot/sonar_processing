@@ -62,8 +62,8 @@
 
     morphology:
       plugin: "sonar_processing::stage_plugins::Morphology"
-      kernel_range:   1    # opening kernel (cells), positive odd; 1 = no opening on that axis
-      kernel_beam:    1    # (a 3x3 opening erases the 1-2 cell wide targets)
+      kernel_x:       1    # opening kernel (cells), x = beams, y = range; positive odd; 1 = no opening on that axis
+      kernel_y:       1    # (a 3x3 opening erases the 1-2 cell wide targets)
       min_blob_cells: 1    # drop 8-connected blobs smaller than this; <= 1 disables
       debug:          true # debug/morphology
 
@@ -71,8 +71,8 @@
       plugin: "sonar_processing::stage_plugins::Persistence"
       persist_n:         3  # 1 <= N <= M; N = M = 1 disables
       persist_m:         5  # <= 255
-      persist_tol_range: 5  # tolerance dilation half-size (cells) for vehicle motion; 5 = 0.24 m at 50 m
-      persist_tol_beam:  3  # 3 beams = 1.4 deg at 120 deg / 256 beams
+      persist_tol_x:     3  # tolerance dilation half-size (cells) for vehicle motion, x = beams; 3 beams = 1.4 deg at 120 deg / 256 beams
+      persist_tol_y:     5  # y = range; 5 = 0.24 m at 50 m
       debug:             true  # debug/persistence, debug/persistence/hit_count
 
     to_laserscan:

@@ -12,8 +12,8 @@ namespace sonar_processing::core
 // All fields must be set by the caller; zero kernels fail validate().
 struct MorphologyConfig
 {
-  int kernel_range{0};     // opening kernel height, positive odd; 1 = no opening along range
-  int kernel_beam{0};      // opening kernel width, positive odd; 1 = no opening along beams
+  int kernel_x{0};  // opening kernel width (beams/cols), positive odd; 1 = no opening along x
+  int kernel_y{0};  // opening kernel height (range/rows), positive odd; 1 = no opening along y
 };
 
 // Cleans a binary detection mask: morphological opening (erode then dilate) removes specks

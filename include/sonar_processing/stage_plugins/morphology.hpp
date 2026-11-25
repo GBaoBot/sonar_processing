@@ -13,7 +13,7 @@ namespace sonar_processing::stage_plugins
 {
 
 // Image stage: morphological opening + small-blob removal (mask -> mask).
-// Params under "<id>.": kernel_range, kernel_beam, min_blob_cells, debug.
+// Params under "<id>.": kernel_x, kernel_y, min_blob_cells, debug.
 // Debug (when debug: true): debug/<id> = cleaned mask.
 class Morphology : public StageBase
 {

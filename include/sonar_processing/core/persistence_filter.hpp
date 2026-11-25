@@ -12,19 +12,19 @@ struct PersistenceConfig
 {
   int persist_n{0};          // detections needed ...
   int persist_m{0};          // ... within the last M pings (current ping included), N <= M
-  int persist_tol_range{0};  // tolerance dilation half-size along range, in cells (>= 0)
-  int persist_tol_beam{0};   // tolerance dilation half-size along beams, in cells (>= 0)
+  int persist_tol_x{0};      // tolerance dilation half-size along x (beams/cols), in cells (>= 0)
+  int persist_tol_y{0};      // tolerance dilation half-size along y (range/rows), in cells (>= 0)
 };
 
 // M-of-N style temporal filter in polar index space (stands in for a log-odds grid).
 //
 // A cell detected in the current ping is kept only if a detection fell within
-// +/- (persist_tol_range, persist_tol_beam) cells of it in at least persist_n of the last
+// +/- (persist_tol_x, persist_tol_y) cells of it in at least persist_n of the last
 // persist_m pings. Each ping's mask is dilated by the tolerance window, stored in a ring of M
 // slots, and a running per-cell count of the stored masks is updated incrementally (add the new
 // slot, subtract the evicted one).
 //
-// NOTE: The dilation with tolerance range and beam is for compensating vehicle's motion. 
+// NOTE: The dilation with tolerance x and y is for compensating vehicle's motion. 
 // The tolerance only absorbs small motion; fast motion causes missed detections (never phantom
 // ones, because the current ping must still detect the cell). Ego-motion compensation would
 // require projecting the history into a world-fixed frame.
