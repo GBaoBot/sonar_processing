@@ -1,19 +1,39 @@
 # Sonar image processing (sonar_processing::SonarProcessingNode)
-# Pipeline: gaussian_filter -> os_cfar -> morphology -> persistence -> scan (first return per beam)
+#
+# `pipeline` is the ordered list of stage ids run on every ping. Every stage takes the mono8
+# polar image and modifies it in place (same size). Output stages such as to_laserscan publish
+# their own topic and pass the image through unchanged, so they can sit anywhere in the list
+# (and more than once, under different ids and topics). Each id needs a block below with
+# `plugin:` and all of that stage's params: there are no C++ defaults, a missing value fails
+# configure. Blocks whose id is not in `pipeline` are ignored, so a stage is added back by
+# listing its id. A pipeline without an output stage runs but publishes nothing.
+#
+# The image is intensity before the CFAR stage and the detection mask (255 = detected) after it;
+# placing a mask stage before CFAR is not detected, keep the order sensible.
+#
+# Debug images: every image stage has a `debug` flag. When true it publishes its output on
+# debug/<id> (mono8, polar), plus any extra images it offers (CFAR: debug/<id>/threshold,
+# persistence: debug/<id>/hit_count). They are only built and sent while something subscribes,
+# so leaving debug on costs nothing until someone looks.
 /**/sonar_processing:
   ros__parameters:
-    input_topic:  "fls/echo/data"            # mono8 polar image from the ECHO driver
+    input_topic:  "fls/echo/data"   # mono8 polar image from the ECHO driver
 
-    gaussian_filter:
-      enabled:     false    # false feeds the raw image to OS-CFAR
+    # gaussian is off (raw image straight into OS-CFAR), as tuned on the sim.
+    pipeline: ["os_cfar", "morphology", "persistence", "to_laserscan"]
+
+    gaussian:
+      plugin: "sonar_processing::stage_plugins::Gaussian"
       kernel_size: 7       # positive odd value
       sigma_x:     0.1     # > 0
       sigma_y:     0.1     # > 0
+      debug:       false   # debug/gaussian
 
     # Tuned on the uuv_kraken sim (450 pings scored per beam against the sim's FLS pointcloud):
     # near-obstacle recall 99%, 0.07 false beams/ping. Targets there are thin 1-2 cell streaks,
     # so no smoothing, no opening and no blob minimum; persistence does the denoising.
     os_cfar:
+      plugin: "sonar_processing::stage_plugins::OsCfar"
       guard_cells_range:    4      # >= 0
       guard_cells_beam:     2      # >= 0
       training_cells_range: 64     # >= 0 (range + beam must be > 0)
@@ -26,20 +46,38 @@
       # Absolute floor. Needed: in the near-range dead zone the background is all zeros, so the
       # order statistic is 0 and any pixel >= 1 would be a detection (real hits are >= 10).
       min_intensity:        5.0
+      debug:                true   # debug/os_cfar, debug/os_cfar/threshold
+
+    # Alternative detector: replace "os_cfar" with "ca_cfar" in `pipeline`.
+    # NOT tuned: same window and floor as os_cfar as a starting point.
+    ca_cfar:
+      plugin: "sonar_processing::stage_plugins::CaCfar"
+      guard_cells_range:    4
+      guard_cells_beam:     2
+      training_cells_range: 64
+      training_cells_beam:  8
+      false_alarm_rate:     1.0e-2
+      min_intensity:        5.0
+      debug:                false  # debug/ca_cfar, debug/ca_cfar/threshold
 
     morphology:
+      plugin: "sonar_processing::stage_plugins::Morphology"
       kernel_range:   1    # opening kernel (cells), positive odd; 1 = no opening on that axis
       kernel_beam:    1    # (a 3x3 opening erases the 1-2 cell wide targets)
       min_blob_cells: 1    # drop 8-connected blobs smaller than this; <= 1 disables
+      debug:          true # debug/morphology
 
     persistence:            # keep a detection only if seen in >= N of the last M pings
+      plugin: "sonar_processing::stage_plugins::Persistence"
       persist_n:         3  # 1 <= N <= M; N = M = 1 disables
       persist_m:         5  # <= 255
       persist_tol_range: 5  # tolerance dilation half-size (cells) for vehicle motion; 5 = 0.24 m at 50 m
       persist_tol_beam:  3  # 3 beams = 1.4 deg at 120 deg / 256 beams
+      debug:             true  # debug/persistence, debug/persistence/hit_count
 
-    scan:
-      topic: "fls/echo/scan"     # sensor_msgs/LaserScan in the image's frame_id, image stamp
+    to_laserscan:
+      plugin: "sonar_processing::stage_plugins::ToLaserScan"
+      topic: "fls/echo/scan"       # sensor_msgs/LaserScan in the image's frame_id, image stamp
       # Must match the driver's `range` parameter (it is not published with the image).
       # 50 m = the sim sonar (checked against its pointcloud); set to the ECHO `range` on hardware.
       sonar_range_m:        50.0
@@ -54,10 +92,3 @@
       scan_angle_increment_deg: 0.0  # output spacing when resampling; 0 = finest beam spacing
       uniform_tol_deg:      0.01   # bearings this close to uniform are not resampled
       empty_beam_value:     "inf"  # "inf" (costmap clears the beam) or "range_max"
-
-    debug:                  # mono8 polar images, one per stage
-      smoothed:    {enabled: true, topic: "fls/echo/debug/smoothed"}
-      cfar_mask:   {enabled: true, topic: "fls/echo/debug/cfar_mask"}
-      morphology:  {enabled: true, topic: "fls/echo/debug/morphology"}
-      persistence: {enabled: true, topic: "fls/echo/debug/persistence"}
-      returns:     {enabled: true, topic: "fls/echo/debug/returns"}

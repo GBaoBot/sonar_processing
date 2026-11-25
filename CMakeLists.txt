@@ -19,6 +19,8 @@ set(PACKAGE_DEPENDENCIES
   "rclcpp_lifecycle"
   "rclcpp_components"
   "sensor_msgs"
+  "pluginlib"
+  "tf2_ros"
 )
 
 foreach(PKGDEP IN LISTS PACKAGE_DEPENDENCIES)
@@ -28,29 +30,54 @@ endforeach()
 find_package(OpenCV REQUIRED COMPONENTS core imgproc)
 
 # =============================================================================
+# Core: the sonar maths, plain OpenCV (no rclcpp, no pluginlib). Link this
+# directly to unit-test or reuse an algorithm.
+# =============================================================================
+add_library(${PROJECT_NAME}_core SHARED
+  src/core/gaussian_filter.cpp
+  src/core/cfar/os_cfar.cpp
+  src/core/cfar/ca_cfar.cpp
+  src/core/morphology_filter.cpp
+  src/core/persistence_filter.cpp
+  src/core/scan_builder.cpp
+)
+target_include_directories(${PROJECT_NAME}_core PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(${PROJECT_NAME}_core ${OpenCV_LIBS})
+ament_target_dependencies(${PROJECT_NAME}_core sensor_msgs)   # ScanBuilder fills a LaserScan
+
+# =============================================================================
+# Stage plugins: thin wrappers (params -> algorithm). Loaded only through pluginlib,
+# nothing links this library.
+# =============================================================================
+add_library(${PROJECT_NAME}_stage_plugins SHARED
+  src/stage_plugins/gaussian.cpp
+  src/stage_plugins/cfar/os_cfar.cpp
+  src/stage_plugins/cfar/ca_cfar.cpp
+  src/stage_plugins/morphology.cpp
+  src/stage_plugins/persistence.cpp
+  src/stage_plugins/to_laserscan.cpp
+)
+target_link_libraries(${PROJECT_NAME}_stage_plugins ${PROJECT_NAME}_core ${OpenCV_LIBS})
+ament_target_dependencies(${PROJECT_NAME}_stage_plugins
+  rclcpp rclcpp_lifecycle sensor_msgs pluginlib tf2_ros)
+
+pluginlib_export_plugin_description_file(${PROJECT_NAME} plugin_description.xml)
+
+# =============================================================================
 # Component Library
 # =============================================================================
 add_library(${PROJECT_NAME}_component SHARED
-  src/ca_cfar.cpp
-  src/os_cfar.cpp
-  src/gaussian_filter.cpp
-  src/morphology_filter.cpp
-  src/persistence_filter.cpp
-  src/scan_builder.cpp
   src/sonar_processing_node.cpp
 )
-
 target_include_directories(${PROJECT_NAME}_component PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-
-target_link_libraries(${PROJECT_NAME}_component ${OpenCV_LIBS})
 ament_target_dependencies(${PROJECT_NAME}_component ${PACKAGE_DEPENDENCIES})
 
-# =============================================================================
-# Register Component
-# =============================================================================
 rclcpp_components_register_node(
   ${PROJECT_NAME}_component
   PLUGIN "sonar_processing::SonarProcessingNode"
@@ -61,7 +88,8 @@ rclcpp_components_register_node(
 # Installation
 # =============================================================================
 install(
-  TARGETS ${PROJECT_NAME}_component
+  TARGETS ${PROJECT_NAME}_core ${PROJECT_NAME}_stage_plugins
+    ${PROJECT_NAME}_component
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
@@ -95,6 +123,7 @@ endif()
 # =============================================================================
 # Export
 # =============================================================================
+ament_export_include_directories(include)
 ament_export_dependencies(${PACKAGE_DEPENDENCIES})
 
 ament_package()

@@ -3,7 +3,7 @@
 <package format="3">
   <name>sonar_processing</name>
   <version>0.0.0</version>
-  <description>Lifecycle component that turns Sonoptix ECHO polar sonar images into a sensor_msgs/LaserScan (Gaussian filter, OS-CFAR, morphology, persistence, first return per beam).</description>
+  <description>Lifecycle component that turns Sonoptix ECHO polar sonar images into a sensor_msgs/LaserScan through an ordered list of pluginlib stages set in YAML (Gaussian, OS-CFAR, CA-CFAR, morphology, persistence, LaserScan).</description>
   <maintainer email="baobui226mh@gmail.com">mecatron</maintainer>
   <license>TODO: License declaration</license>
 
@@ -13,6 +13,8 @@
   <depend>rclcpp_lifecycle</depend>
   <depend>rclcpp_components</depend>
   <depend>sensor_msgs</depend>
+  <depend>pluginlib</depend>
+  <depend>tf2_ros</depend>
   <depend>libopencv-dev</depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

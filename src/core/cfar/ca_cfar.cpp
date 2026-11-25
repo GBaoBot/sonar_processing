@@ -1,20 +1,21 @@
-#include "sonar_processing/ca_cfar.hpp"
+#include "sonar_processing/core/cfar/ca_cfar.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
 
+#include <opencv2/core/saturate.hpp>
 #include <opencv2/imgproc.hpp>
 
-namespace sonar_processing
+namespace sonar_processing::core
 {
 
 namespace
 {
 // Sum over [c0, c1) between integral rows top and bottom. Unsigned wrap-around keeps the
 // difference exact even if the integral itself overflows 32 bits.
-inline uint32_t rowSpanSum(const uint32_t * top, const uint32_t * bottom, int c0, int c1)
+inline uint32_t row_span_sum(const uint32_t * top, const uint32_t * bottom, int c0, int c1)
 {
   return bottom[c1] - bottom[c0] - top[c1] + top[c0];
 }
@@ -23,16 +24,16 @@ inline uint32_t rowSpanSum(const uint32_t * top, const uint32_t * bottom, int c0
 void CaCfar::validate(const CaCfarConfig & config)
 {
   if (config.guard_cells_range < 0 || config.guard_cells_beam < 0) {
-    throw std::invalid_argument("Sonar Processing: CFAR guard cells must be >= 0");
+    throw std::invalid_argument("CFAR guard cells must be >= 0");
   }
   if (config.training_cells_range < 0 || config.training_cells_beam < 0) {
-    throw std::invalid_argument("Sonar Processing: CFAR training cells must be >= 0");
+    throw std::invalid_argument("CFAR training cells must be >= 0");
   }
   if (config.training_cells_range == 0 && config.training_cells_beam == 0) {
-    throw std::invalid_argument("Sonar Processing: CFAR needs training cells on at least one axis");
+    throw std::invalid_argument("CFAR needs training cells on at least one axis");
   }
   if (!(config.false_alarm_rate > 0.0 && config.false_alarm_rate < 1.0)) {
-    throw std::invalid_argument("Sonar Processing: CFAR false alarm rate must be in (0, 1)");
+    throw std::invalid_argument("CFAR false alarm rate must be in (0, 1)");
   }
 }
 
@@ -55,6 +56,7 @@ void CaCfar::configure(const CaCfarConfig & config)
 
   // sum < cut * N / alpha(N), sum is an integer: sum < ceil(cut * N / alpha(N)).
   const double scale = interior_n / alpha_lut_[interior_n];
+  interior_scale_ = alpha_lut_[interior_n] / interior_n;
   constexpr double kMaxLimit = std::numeric_limits<uint32_t>::max();
   for (int cut = 0; cut < 256; ++cut) {
     sum_limit_[cut] = cut > config.min_intensity ?
@@ -62,18 +64,21 @@ void CaCfar::configure(const CaCfarConfig & config)
   }
 }
 
-void CaCfar::detect(const cv::Mat & src, cv::Mat & dst)
+void CaCfar::detect(const cv::Mat & src, cv::Mat & dst, cv::Mat * threshold)
 {
   if (src.type() != CV_8UC1) {
-    throw std::invalid_argument("Sonar Processing: CFAR expects a CV_8UC1 (mono8) image");
+    throw std::invalid_argument("CFAR expects a CV_8UC1 (mono8) image");
   }
   if (alpha_lut_.empty()) {
-    throw std::logic_error("Sonar Processing: CFAR used before configure()");
+    throw std::logic_error("CFAR used before configure()");
   }
 
   const int rows = src.rows;
   const int cols = src.cols;
   dst.create(rows, cols, CV_8UC1);
+  if (threshold) {
+    threshold->create(rows, cols, CV_8UC1);
+  }
   cv::integral(src, integral_, CV_32S);
 
   // Interior: full windows, fixed N, integer-only test.
@@ -86,11 +91,11 @@ void CaCfar::detect(const cv::Mat & src, cv::Mat & dst)
 
   for (int y = 0; y < rows; ++y) {
     if (y < y_begin || y >= y_end) {
-      detectClipped(src, dst, y, 0, cols);
+      detect_clipped(src, dst, threshold, y, 0, cols);
       continue;
     }
-    detectClipped(src, dst, y, 0, x_begin);
-    detectClipped(src, dst, y, x_end, cols);
+    detect_clipped(src, dst, threshold, y, 0, x_begin);
+    detect_clipped(src, dst, threshold, y, x_end, cols);
 
     const uint32_t * o_top = integral_.ptr<uint32_t>(y - outer_r_);
     const uint32_t * o_bot = integral_.ptr<uint32_t>(y + outer_r_ + 1);
@@ -98,17 +103,23 @@ void CaCfar::detect(const cv::Mat & src, cv::Mat & dst)
     const uint32_t * g_bot = integral_.ptr<uint32_t>(y + gr + 1);
     const uint8_t * cut_row = src.ptr<uint8_t>(y);
     uint8_t * out_row = dst.ptr<uint8_t>(y);
+    uint8_t * thr_row = threshold ? threshold->ptr<uint8_t>(y) : nullptr;
 
     for (int x = x_begin; x < x_end; ++x) {
       const uint32_t training_sum =
-        rowSpanSum(o_top, o_bot, x - outer_b_, x + outer_b_ + 1) -
-        rowSpanSum(g_top, g_bot, x - gb, x + gb + 1);
+        row_span_sum(o_top, o_bot, x - outer_b_, x + outer_b_ + 1) -
+        row_span_sum(g_top, g_bot, x - gb, x + gb + 1);
       out_row[x] = training_sum < sum_limit_[cut_row[x]] ? 255 : 0;
+      if (thr_row) {
+        thr_row[x] = cv::saturate_cast<uint8_t>(
+          std::max(interior_scale_ * training_sum, config_.min_intensity));
+      }
     }
   }
 }
 
-void CaCfar::detectClipped(const cv::Mat & src, cv::Mat & dst, int y, int x0, int x1) const
+void CaCfar::detect_clipped(
+  const cv::Mat & src, cv::Mat & dst, cv::Mat * threshold, int y, int x0, int x1) const
 {
   const int rows = src.rows;
   const int cols = src.cols;
@@ -125,6 +136,7 @@ void CaCfar::detectClipped(const cv::Mat & src, cv::Mat & dst, int y, int x0, in
   const uint32_t * g_bot = integral_.ptr<uint32_t>(gy1);
   const uint8_t * cut_row = src.ptr<uint8_t>(y);
   uint8_t * out_row = dst.ptr<uint8_t>(y);
+  uint8_t * thr_row = threshold ? threshold->ptr<uint8_t>(y) : nullptr;
 
   for (int x = x0; x < x1; ++x) {
     const int ox0 = std::max(0, x - outer_b_);
@@ -134,16 +146,25 @@ void CaCfar::detectClipped(const cv::Mat & src, cv::Mat & dst, int y, int x0, in
 
     const int n = (oy1 - oy0) * (ox1 - ox0) - (gy1 - gy0) * (gx1 - gx0);
     const uint8_t cut = cut_row[x];
-    if (n <= 0 || cut <= config_.min_intensity) {   // n <= 0: image smaller than guard window
+    if (n <= 0) {   // image smaller than guard window: never detect
       out_row[x] = 0;
+      if (thr_row) {thr_row[x] = 255;}
       continue;
     }
 
     const uint32_t training_sum =
-      rowSpanSum(o_top, o_bot, ox0, ox1) - rowSpanSum(g_top, g_bot, gx0, gx1);
+      row_span_sum(o_top, o_bot, ox0, ox1) - row_span_sum(g_top, g_bot, gx0, gx1);
+    if (thr_row) {
+      thr_row[x] = cv::saturate_cast<uint8_t>(
+        std::max(alpha_lut_[n] * training_sum / n, config_.min_intensity));
+    }
+    if (cut <= config_.min_intensity) {
+      out_row[x] = 0;
+      continue;
+    }
     // cut > alpha(n) * sum / n, without the divide
     out_row[x] = static_cast<double>(cut) * n > alpha_lut_[n] * training_sum ? 255 : 0;
   }
 }
 
-}  // namespace sonar_processing
+}  // namespace sonar_processing::core

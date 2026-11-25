@@ -1,4 +1,4 @@
-#include "sonar_processing/scan_builder.hpp"
+#include "sonar_processing/core/scan_builder.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace sonar_processing
+namespace sonar_processing::core
 {
 
 namespace
@@ -16,37 +16,37 @@ constexpr double kDegToRad = M_PI / 180.0;
 constexpr int kMaxOutputBins = 100000;
 
 // Same rule as the ECHO driver's fan imager (sonoptix_echo::fovForRange).
-inline double driverFovDeg(double sonar_range_m) {return sonar_range_m <= 30.0 ? 120.0 : 90.0;}
+inline double driver_fov_deg(double sonar_range_m) {return sonar_range_m <= 30.0 ? 120.0 : 90.0;}
 }  // namespace
 
 void ScanBuilder::validate(const ScanConfig & config)
 {
   if (!(config.sonar_range_m > 0.0)) {
-    throw std::invalid_argument("Sonar Processing: sonar_range_m must be > 0");
+    throw std::invalid_argument("sonar_range_m must be > 0");
   }
   if (!(config.min_range_m >= 0.0)) {
-    throw std::invalid_argument("Sonar Processing: min_range_m must be >= 0");
+    throw std::invalid_argument("min_range_m must be >= 0");
   }
   if (!(config.obstacle_max_range_m > config.min_range_m)) {
     throw std::invalid_argument(
-            "Sonar Processing: obstacle_max_range_m must be > min_range_m");
+            "obstacle_max_range_m must be > min_range_m");
   }
   if (config.beam_bearings_deg.empty() && !(config.fov_deg >= 0.0 && config.fov_deg < 360.0)) {
-    throw std::invalid_argument("Sonar Processing: fov_deg must be in [0, 360)");
+    throw std::invalid_argument("fov_deg must be in [0, 360)");
   }
   if (config.beam_bearings_deg.size() == 1) {
-    throw std::invalid_argument("Sonar Processing: beam_bearings_deg needs at least 2 beams");
+    throw std::invalid_argument("beam_bearings_deg needs at least 2 beams");
   }
   for (const double b : config.beam_bearings_deg) {
     if (!std::isfinite(b)) {
-      throw std::invalid_argument("Sonar Processing: beam_bearings_deg must be finite");
+      throw std::invalid_argument("beam_bearings_deg must be finite");
     }
   }
   if (!(config.scan_angle_increment_deg >= 0.0)) {
-    throw std::invalid_argument("Sonar Processing: scan_angle_increment_deg must be >= 0");
+    throw std::invalid_argument("scan_angle_increment_deg must be >= 0");
   }
   if (!(config.uniform_tol_deg >= 0.0)) {
-    throw std::invalid_argument("Sonar Processing: uniform_tol_deg must be >= 0");
+    throw std::invalid_argument("uniform_tol_deg must be >= 0");
   }
 }
 
@@ -63,21 +63,21 @@ void ScanBuilder::configure(const ScanConfig & config)
 void ScanBuilder::prepare(int cols)
 {
   if (cols < 2) {
-    throw std::invalid_argument("Sonar Processing: the polar image needs at least 2 beams");
+    throw std::invalid_argument("the polar image needs at least 2 beams");
   }
 
   std::vector<double> bearing(static_cast<size_t>(cols));
   if (config_.beam_bearings_deg.empty()) {
     // Uniform beam centres across the fan, column 0 = port (positive angle).
     const double fov =
-      (config_.fov_deg > 0.0 ? config_.fov_deg : driverFovDeg(config_.sonar_range_m)) * kDegToRad;
+      (config_.fov_deg > 0.0 ? config_.fov_deg : driver_fov_deg(config_.sonar_range_m)) * kDegToRad;
     for (int c = 0; c < cols; ++c) {
       bearing[c] = (0.5 - (c + 0.5) / cols) * fov;
     }
   } else {
     if (static_cast<int>(config_.beam_bearings_deg.size()) != cols) {
       throw std::invalid_argument(
-              "Sonar Processing: beam_bearings_deg has " +
+              "beam_bearings_deg has " +
               std::to_string(config_.beam_bearings_deg.size()) + " entries but the image has " +
               std::to_string(cols) + " beams");
     }
@@ -95,7 +95,7 @@ void ScanBuilder::prepare(int cols)
   const double hi = bearing[order.back()];
   const double span = hi - lo;
   if (!(span > 0.0)) {
-    throw std::invalid_argument("Sonar Processing: beam bearings must not all be equal");
+    throw std::invalid_argument("beam bearings must not all be equal");
   }
 
   // Uniform check: max deviation of the sorted bearings from an evenly spaced grid.
@@ -133,7 +133,7 @@ void ScanBuilder::prepare(int cols)
     const double bins = std::ceil(span / target - 1e-6) + 1.0;
     if (!(bins <= kMaxOutputBins)) {
       throw std::invalid_argument(
-              "Sonar Processing: scan angle increment too small (more than " +
+              "scan angle increment too small (more than " +
               std::to_string(kMaxOutputBins) + " output bins)");
     }
     n_bins_ = std::max(2, static_cast<int>(bins));
@@ -177,7 +177,7 @@ void ScanBuilder::build(
   const cv::Mat & mask, sensor_msgs::msg::LaserScan & scan, std::vector<int> & return_rows)
 {
   if (mask.type() != CV_8UC1) {
-    throw std::invalid_argument("Sonar Processing: scan builder expects a CV_8UC1 mask");
+    throw std::invalid_argument("scan builder expects a CV_8UC1 mask");
   }
   if (mask.cols != prepared_cols_) {
     prepare(mask.cols);
@@ -242,4 +242,4 @@ void ScanBuilder::build(
   scan.intensities.clear();
 }
 
-}  // namespace sonar_processing
+}  // namespace sonar_processing::core

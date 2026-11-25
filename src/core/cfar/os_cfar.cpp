@@ -1,4 +1,4 @@
-#include "sonar_processing/os_cfar.hpp"
+#include "sonar_processing/core/cfar/os_cfar.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -8,17 +8,17 @@
 
 #include <opencv2/imgproc.hpp>
 
-namespace sonar_processing
+namespace sonar_processing::core
 {
 
 namespace
 {
-inline int trainingCellCount(int guard_x, int guard_y, int outer_x, int outer_y)
+inline int training_cell_count(int guard_x, int guard_y, int outer_x, int outer_y)
 {
   return (2 * outer_x + 1) * (2 * outer_y + 1) - (2 * guard_x + 1) * (2 * guard_y + 1);
 }
 
-inline double osPfa(int n, int k, double alpha)
+inline double os_pfa(int n, int k, double alpha)
 {
   double log_pfa = 0.0;
   for (int i = 0; i < k; ++i) {
@@ -32,7 +32,7 @@ inline double osPfa(int n, int k, double alpha)
 // Returns the smallest v with count(<= v) >= k. P stays in [0, 255]: walking down needs
 // L >= k >= 1 values below P (so P > 0), and walking up stops at 255 at the latest because
 // count(<= 255) = N >= k.
-inline int kthOrderStatistic(const int32_t * H, int k, int P, int & L)
+inline int kth_order_statistic(const int32_t * H, int k, int P, int & L)
 {
   if (L >= k) {        // answer is below P: walk down
     do {
@@ -52,24 +52,24 @@ inline int kthOrderStatistic(const int32_t * H, int k, int P, int & L)
 void OsCfar::validate(const OsCfarConfig & config)
 {
   if (config.guard_cells_y < 0 || config.guard_cells_x < 0) {
-    throw std::invalid_argument("Sonar Processing: CFAR guard cells must be >= 0");
+    throw std::invalid_argument("CFAR guard cells must be >= 0");
   }
   if (config.training_cells_y < 0 || config.training_cells_x < 0) {
-    throw std::invalid_argument("Sonar Processing: CFAR training cells must be >= 0");
+    throw std::invalid_argument("CFAR training cells must be >= 0");
   }
   if (config.training_cells_y == 0 && config.training_cells_x == 0) {
-    throw std::invalid_argument("Sonar Processing: CFAR needs training cells on at least one axis");
+    throw std::invalid_argument("CFAR needs training cells on at least one axis");
   }
   if (!(config.false_alarm_rate > 0.0 && config.false_alarm_rate < 1.0)) {
-    throw std::invalid_argument("Sonar Processing: CFAR false alarm rate must be in (0, 1)");
+    throw std::invalid_argument("CFAR false alarm rate must be in (0, 1)");
   }
-  const int n = trainingCellCount(
+  const int n = training_cell_count(
     config.guard_cells_x, config.guard_cells_y,
     config.guard_cells_x + config.training_cells_x,
     config.guard_cells_y + config.training_cells_y);
   if (config.kth_order_statistic < 1 || config.kth_order_statistic > n) {
     throw std::invalid_argument(
-            "Sonar Processing: CFAR kth order statistic must be in [1, N] (N = " +
+            "CFAR kth order statistic must be in [1, N] (N = " +
             std::to_string(n) + " training cells)");
   }
 }
@@ -80,45 +80,49 @@ void OsCfar::configure(const OsCfarConfig & config)
   config_ = config;
   outer_x_ = config.guard_cells_x + config.training_cells_x;
   outer_y_ = config.guard_cells_y + config.training_cells_y;
-  n_training_ = trainingCellCount(config.guard_cells_x, config.guard_cells_y, outer_x_, outer_y_);
+  n_training_ = training_cell_count(config.guard_cells_x, config.guard_cells_y, outer_x_, outer_y_);
 
   const int k = config.kth_order_statistic;
   double lo = 0.0;
   double hi = 1.0;
-  while (osPfa(n_training_, k, hi) > config.false_alarm_rate) {
+  while (os_pfa(n_training_, k, hi) > config.false_alarm_rate) {
     lo = hi;
     hi *= 2.0;
   }
   for (int i = 0; i < 100 && hi - lo > 1e-9 * hi; ++i) {
     const double mid = 0.5 * (lo + hi);
-    (osPfa(n_training_, k, mid) > config.false_alarm_rate ? lo : hi) = mid;
+    (os_pfa(n_training_, k, mid) > config.false_alarm_rate ? lo : hi) = mid;
   }
   alpha_os_ = hi;
 
   for (int xk = 0; xk < 256; ++xk) {
     const double limit = std::floor(std::max(alpha_os_ * xk, config.min_intensity)) + 1.0;
     cut_limit_[xk] = static_cast<uint16_t>(std::min(limit, 256.0));
+    threshold_lut_[xk] = static_cast<uint8_t>(std::min(cut_limit_[xk] - 1, 255));
   }
 
   kernel_histogram_.fill(0);
 }
 
-void OsCfar::detect(const cv::Mat & src, cv::Mat & dst)
+void OsCfar::detect(const cv::Mat & src, cv::Mat & dst, cv::Mat * threshold)
 {
   if (src.type() != CV_8UC1) {
-    throw std::invalid_argument("Sonar Processing: CFAR expects a CV_8UC1 (mono8) image");
+    throw std::invalid_argument("CFAR expects a CV_8UC1 (mono8) image");
   }
 
   if (n_training_ <= 0) {
-    throw std::logic_error("Sonar Processing: OS-CFAR detect() called before configure()");
+    throw std::logic_error("OS-CFAR detect() called before configure()");
   }
   if (2 * outer_y_ + 1 > std::numeric_limits<uint16_t>::max()) {
-    throw std::invalid_argument("Sonar Processing: OS-CFAR window too tall for uint16 histograms");
+    throw std::invalid_argument("OS-CFAR window too tall for uint16 histograms");
   }
 
   const int rows = src.rows;
   const int cols = src.cols;
   dst.create(rows, cols, CV_8UC1);
+  if (threshold) {
+    threshold->create(rows, cols, CV_8UC1);
+  }
   if (rows == 0 || cols == 0) {
     return;
   }
@@ -170,6 +174,7 @@ void OsCfar::detect(const cv::Mat & src, cv::Mat & dst)
     const uint8_t * cut_row = padded_.ptr<uint8_t>(i + outer_y_);
     const uint8_t * guard_row0 = padded_.ptr<uint8_t>(i + outer_y_ - guard_y);
     uint8_t * dst_row = dst.ptr<uint8_t>(i);
+    uint8_t * thr_row = threshold ? threshold->ptr<uint8_t>(i) : nullptr;
 
     // Section 3.3.2: kernel histogram for j = 0. Sum the outer-window column histograms,
     // then remove the guard rectangle (which contains the CUT) pixel by pixel.
@@ -192,11 +197,12 @@ void OsCfar::detect(const cv::Mat & src, cv::Mat & dst)
     for (int l = 0; l < P; ++l) {
       L += H[l];
     }
-    P = kthOrderStatistic(H, k, P, L);
+    P = kth_order_statistic(H, k, P, L);
     const int row_start_P = P;
 
     // Section 3.3.5: detection.
     dst_row[0] = cut_row[outer_x_] >= cut_limit_[P] ? 255 : 0;
+    if (thr_row) {thr_row[0] = threshold_lut_[P];}
 
     for (int j = 1; j < cols; ++j) {
       // a. Sections 3.3.2-3.3.3: outer update H += hr - hl, with L updated for bins < P.
@@ -231,15 +237,16 @@ void OsCfar::detect(const cv::Mat & src, cv::Mat & dst)
       }
 
       // c. Section 3.3.4: k-th search with the breakdown point, starting from previous P.
-      P = kthOrderStatistic(H, k, P, L);
+      P = kth_order_statistic(H, k, P, L);
 
       // d. Section 3.3.5: detection. cut_limit_ already folds in alpha_os_, min_intensity and
       //    the strict '>' (+1); 256 means never detect.
       dst_row[j] = cut_row[j + outer_x_] >= cut_limit_[P] ? 255 : 0;
+      if (thr_row) {thr_row[j] = threshold_lut_[P];}
     }
 
     P = row_start_P;  // next row starts from this row's first-pixel statistic
   }
 }
 
-} // namespace sonar_processing
+}  // namespace sonar_processing::core

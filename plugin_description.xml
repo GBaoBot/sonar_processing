@@ -1,0 +1,22 @@
+<class_libraries>
+  <library path="sonar_processing_stage_plugins">
+    <class type="sonar_processing::stage_plugins::Gaussian" base_class_type="sonar_processing::StageBase">
+      <description>Gaussian smoothing of the intensity image (intensity -> intensity).</description>
+    </class>
+    <class type="sonar_processing::stage_plugins::OsCfar" base_class_type="sonar_processing::StageBase">
+      <description>Ordered-statistic CFAR detector (intensity -> mask).</description>
+    </class>
+    <class type="sonar_processing::stage_plugins::CaCfar" base_class_type="sonar_processing::StageBase">
+      <description>Cell-averaging CFAR detector (intensity -> mask).</description>
+    </class>
+    <class type="sonar_processing::stage_plugins::Morphology" base_class_type="sonar_processing::StageBase">
+      <description>Morphological opening and small-blob removal (mask -> mask).</description>
+    </class>
+    <class type="sonar_processing::stage_plugins::Persistence" base_class_type="sonar_processing::StageBase">
+      <description>N-of-M temporal filter in polar cells (mask -> mask).</description>
+    </class>
+    <class type="sonar_processing::stage_plugins::ToLaserScan" base_class_type="sonar_processing::StageBase">
+      <description>Publishes the first return per beam as a sensor_msgs/LaserScan; passes the mask through unchanged.</description>
+    </class>
+  </library>
+</class_libraries>

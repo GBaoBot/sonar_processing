@@ -1,23 +1,23 @@
-#include "sonar_processing/persistence_filter.hpp"
+#include "sonar_processing/core/persistence_filter.hpp"
 
 #include <algorithm>
 #include <stdexcept>
 
 #include <opencv2/imgproc.hpp>
 
-namespace sonar_processing
+namespace sonar_processing::core
 {
 
 void PersistenceFilter::validate(const PersistenceConfig & config)
 {
   if (config.persist_m < 1 || config.persist_m > 255) {
-    throw std::invalid_argument("Sonar Processing: persist_m must be in [1, 255]");
+    throw std::invalid_argument("persist_m must be in [1, 255]");
   }
   if (config.persist_n < 1 || config.persist_n > config.persist_m) {
-    throw std::invalid_argument("Sonar Processing: persist_n must be in [1, persist_m]");
+    throw std::invalid_argument("persist_n must be in [1, persist_m]");
   }
   if (config.persist_tol_range < 0 || config.persist_tol_beam < 0) {
-    throw std::invalid_argument("Sonar Processing: persistence tolerances must be >= 0");
+    throw std::invalid_argument("persistence tolerances must be >= 0");
   }
 }
 
@@ -42,10 +42,10 @@ void PersistenceFilter::reset()
 void PersistenceFilter::apply(const cv::Mat & mask, cv::Mat & dst)
 {
   if (mask.type() != CV_8UC1) {
-    throw std::invalid_argument("Sonar Processing: persistence expects a CV_8UC1 mask");
+    throw std::invalid_argument("persistence expects a CV_8UC1 mask");
   }
   if (history_.empty()) {
-    throw std::logic_error("Sonar Processing: PersistenceFilter used before configure()");
+    throw std::logic_error("PersistenceFilter used before configure()");
   }
 
   if (count_.size() != mask.size()) {
@@ -54,9 +54,13 @@ void PersistenceFilter::apply(const cv::Mat & mask, cv::Mat & dst)
   }
 
   cv::Mat & slot = history_[head_];
+
+  // Remove the oldest ping
   if (filled_ == config_.persist_m) {
-    cv::subtract(count_, slot, count_);   // evict the oldest ping
+    cv::subtract(count_, slot, count_);
   }
+
+  // Replace oldest ping with latest ping
   if (config_.persist_tol_range > 0 || config_.persist_tol_beam > 0) {
     cv::dilate(mask, slot, kernel_);
   } else {
@@ -65,13 +69,14 @@ void PersistenceFilter::apply(const cv::Mat & mask, cv::Mat & dst)
   cv::min(slot, 1, slot);                 // 0/255 -> 0/1
   cv::add(count_, slot, count_);
 
-  head_ = (head_ + 1) % config_.persist_m;
-  filled_ = std::min(filled_ + 1, config_.persist_m);
-
-  // Keep current detections whose neighbourhood was hit in >= N of the stored pings. During the
-  // first N - 1 pings after a reset nothing passes.
+  // Keep current detections whose neighbourhood was hit in >= N of the stored pings. 
+  // During the first N - 1 pings after a reset nothing passes.
   cv::compare(count_, config_.persist_n, persistent_, cv::CMP_GE);
   cv::bitwise_and(mask, persistent_, dst);
+
+  // Move head pointer, update filled_ if the queue is not filled
+  head_ = (head_ + 1) % config_.persist_m;
+  filled_ = std::min(filled_ + 1, config_.persist_m);
 }
 
-}  // namespace sonar_processing
+}  // namespace sonar_processing::core

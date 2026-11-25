@@ -5,19 +5,19 @@
 
 #include <opencv2/core.hpp>
 
-namespace sonar_processing
+namespace sonar_processing::core
 {
 
 // Kernel sizes are in cells. Rows = range samples, cols = beams (polar sonar image).
+// All fields must be set by the caller; zero kernels fail validate().
 struct MorphologyConfig
 {
-  int kernel_range{3};     // opening kernel height, positive odd; 1 = no opening along range
-  int kernel_beam{3};      // opening kernel width, positive odd; 1 = no opening along beams
-  int min_blob_cells{4};   // 8-connected blobs with fewer cells are removed; <= 1 disables
+  int kernel_range{0};     // opening kernel height, positive odd; 1 = no opening along range
+  int kernel_beam{0};      // opening kernel width, positive odd; 1 = no opening along beams
 };
 
 // Cleans a binary detection mask: morphological opening (erode then dilate) removes specks
-// thinner than the kernel, then connected components smaller than min_blob_cells are dropped.
+// thinner than the kernel.
 class MorphologyFilter
 {
 public:
@@ -36,4 +36,4 @@ private:
   std::vector<uint8_t> keep_;            // per label: 255 = keep, 0 = drop
 };
 
-}  // namespace sonar_processing
+}  // namespace sonar_processing::core

@@ -5,22 +5,23 @@
 #include <opencv2/core.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 
-namespace sonar_processing
+namespace sonar_processing::core
 {
 
 // Geometry of the polar image: row r covers range [r * res, (r + 1) * res) with
 // res = sonar_range_m / rows (row 0 at the transducer); column c is beam c.
+// All fields must be set by the caller; a zero sonar_range_m fails validate().
 struct ScanConfig
 {
-  double sonar_range_m{50.0};          // range at the far edge of the polar image
-  double min_range_m{0.5};             // returns closer than this are ignored (ringdown)
-  double obstacle_max_range_m{30.0};   // returns farther than this are ignored
+  double sonar_range_m{0.0};           // range at the far edge of the polar image
+  double min_range_m{0.0};             // returns closer than this are ignored (ringdown)
+  double obstacle_max_range_m{0.0};    // returns farther than this are ignored
   // Per-column bearings in degrees, ROS convention (0 = sonar +x, positive = CCW = port).
   // Empty = uniform table from fov_deg, with column 0 the leftmost (port) beam.
   std::vector<double> beam_bearings_deg;
   double fov_deg{0.0};                 // only for the uniform table; 0 = driver rule (see .cpp)
   double scan_angle_increment_deg{0.0};  // output spacing; 0 = finest original beam spacing
-  double uniform_tol_deg{0.01};        // bearings within this of uniform skip resampling
+  double uniform_tol_deg{0.0};         // bearings within this of uniform skip resampling
   bool empty_beam_inf{true};           // empty beam: true = +inf, false = range_max
 };
 
@@ -41,7 +42,7 @@ public:
 
   // Valid after the first build(): false when the bearings were uniform (no resampling).
   bool resampling() const {return !uniform_;}
-  int outputBins() const {return n_bins_;}
+  int output_bins() const {return n_bins_;}
 
 private:
   // Builds the bearing table for this image width and the beam -> output bin mapping.
@@ -58,4 +59,4 @@ private:
   std::vector<float> beam_range_;  // per original beam: first-return range, +inf = none
 };
 
-}  // namespace sonar_processing
+}  // namespace sonar_processing::core
